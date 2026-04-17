@@ -20,41 +20,59 @@ category: hermes-core
 
 ## 首次使用（初始化）
 
-### 步骤 1：配置本地 Git 仓库目录
+### 检查是否已配置
+
+1. 检查 `~/.hermes/config.yaml` 中是否有 `skill_pipeline` 配置
+2. 检查 SSH key 是否已存在：`ls ~/.ssh/github_ed25519*`
+3. 检查 Git 仓库目录是否存在
+
+如果都已配置好，初始化跳过，直接可用。
+
+### 步骤 1：配置本地 Git 仓库目录（可跳过）
 
 提示用户输入存储 GitHub 技能库的本地文件夹路径。
+
+如果用户选择跳过，则暂时不配置，稍后在入库/学习时如发现目录不存在再提示配置。
 
 示例路径：
 - Windows: `C:\Users\15284\Desktop\git\skills`
 - WSL: `/mnt/c/Users/15284/Desktop/git/skills`
 
-验证目录是否存在且包含 `.git` 文件夹。
+验证目录是否存在且包含 `.git` 文件夹。如不存在，提示用户创建或选择其他路径。
 
-### 步骤 2：生成并配置 SSH Key
+### 步骤 2：生成并配置 SSH Key（可跳过）
 
-1. 检查 `~/.ssh/` 目录是否已有 GitHub 相关的 SSH key
-2. 如无，生成新的 Ed25519 SSH key：
+检查 `~/.ssh/` 目录是否已有 GitHub 相关的 SSH key。
+
+**如果已有**，跳过生成步骤。
+
+**如果没有**，提示用户：
+1. 生成新的 Ed25519 SSH key：
    ```bash
    ssh-keygen -t ed25519 -C "用户邮箱" -f ~/.ssh/github_ed25519 -N ""
    ```
-3. 配置 SSH config：
+2. 配置 SSH config：
    ```
    Host github.com
        HostName github.com
        User git
        IdentityFile ~/.ssh/github_ed25519
    ```
-4. 将公钥内容显示给用户，提示复制到 GitHub：
+3. 将公钥内容显示给用户，提示复制到 GitHub：
    - Settings → SSH and GPG keys → New SSH key
    - Key 类型选 "Authentication key"
    - 粘贴公钥
 
-### 步骤 3：验证连接
+**如果用户选择跳过**，暂时不生成，后续在 push 时如发现 SSH 未配置再提示。
 
-配置完成后测试 GitHub SSH 连接：
+### 步骤 3：验证连接（可跳过）
+
+配置完成后可测试 GitHub SSH 连接：
 ```bash
 ssh -T git@github.com
 ```
+
+如跳过，后续 push 时再验证。
 
 ### 配置保存
 
@@ -65,6 +83,8 @@ skill_pipeline:
   ssh_key_path: "~/.ssh/github_ed25519"
   initialized: true
 ```
+
+如果用户跳过某步骤，对应配置项可为空或标记为 pending。
 
 ## 技能入库（完整流程）
 
