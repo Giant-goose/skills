@@ -39,15 +39,17 @@ fallback_model:
 | Bad Gateway | 502 | 上游服务无响应 |
 | Service Unavailable | 503 | 服务过载/维护中 |
 | Gateway Timeout | 504 | 请求超时 |
+| **所有 5xx 错误** | **5xx** | **任何服务端错误** |
 | 空响应 | - | 返回内容为空 |
 | 速率限制 | 429 | 超出调用配额 |
 
 ## 工作原理
 
 1. **错误分类**：每次 API 错误经过 `classify_api_error()` 分类
-2. **Fallback 判定**：如果 `should_fallback=True`，触发 `_try_activate_fallback()`
-3. **模型切换**：自动更换 client、model、provider 配置
-4. **重试恢复**：重置 retry_count，继续使用备用模型
+2. **5xx 检测**：状态码 500/501/502/503/504/505 等全部触发 should_fallback=True
+3. **Fallback 判定**：如果 `should_fallback=True`，触发 `_try_activate_fallback()`
+4. **模型切换**：自动更换 client、model、provider 配置
+5. **重试恢复**：重置 retry_count，继续使用备用模型
 
 ## 注意事项
 
