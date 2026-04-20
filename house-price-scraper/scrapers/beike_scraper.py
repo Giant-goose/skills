@@ -11,7 +11,6 @@
 
 import sys, os, re, time, random, urllib.request
 from io import BytesIO
-from urllib.parse import quote
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from selenium.webdriver.common.by import By
@@ -43,7 +42,7 @@ def normalize_room(raw: str) -> str:
 def build_url(community: str, room: str, page: int = 1) -> str:
     """拼接贝壳网搜索URL，page>1时加pg段"""
     room_seg = ROOM_MAP.get(room, "")
-    rs_seg   = f"rs{quote(community)}" if community else ""
+    rs_seg   = f"rs{community}" if community else ""
     path_seg = f"{room_seg}{rs_seg}" if (room_seg or rs_seg) else ""
     pg_seg   = f"pg{page}/" if page > 1 else ""
     path     = f"/ershoufang/{path_seg}/{pg_seg}" if path_seg else f"/ershoufang/{pg_seg}"
@@ -65,6 +64,35 @@ def parse_args():
 
 
 def download_image(url: str) -> bytes | None:
+    """下载图片，带Referer防盗链头，失败返回None"""
+    try:
+        req = urllib.request.Request(url, headers={
+            "User-Agent": config.USER_AGENT,
+            "Referer": f"https://{CITY_CODE}.ke.com/"
+        })
+        return urllib.request.urlopen(req, timeout=10).read()
+    except Exception:
+        return None
+
+
+def _is_match(community_input: str, community_result: str) -> bool:
+    """
+    判断搜索词与结果小区名是否匹配，支持三种情况：
+    1. 完全包含：结果包含搜索词（鑫苑鑫都汇 in 鑫苑鑫都汇南区）
+    2. 反向包含：搜索词包含结果（滨江和城一期 in 滨江和城）
+    3. 关键词匹配：搜索词按2字切片，任意片段出现在结果中
+       （滨江和城 -> [滨江, 江和, 和城] -> 和城 in 滨江和城二期）
+    """
+    if community_input in community_result:
+        return True
+    if community_result in community_input:
+        return True
+    # 2字滑动窗口切片匹配
+    for i in range(len(community_input) - 1):
+        chunk = community_input[i:i+2]
+        if chunk in community_result:
+            return True
+    return False
     """下载图片，带Referer防盗链头，失败返回None"""
     try:
         req = urllib.request.Request(url, headers={
@@ -151,18 +179,26 @@ class BeikeScraper:
                 self.driver.execute_script("window.scrollTo(0, 0);")
                 time.sleep(0.5)
 
-                # 前5条验证是否匹配小区名
+                # 双重验证：新上房源通知弹窗 + 前5条均不匹配 -> 判定小区名输入有误
                 if self.community and page == 1:
+                    # 条件1：页面出现"新上房源通知"提示
+                    has_notify = bool(self.driver.find_elements(
+                        By.XPATH, "//div[contains(text(),'新上房源通知')]"
+                    ))
+
+                    # 条件2：前5条小区名均与输入无关
                     sample = []
                     for item in items[:5]:
                         try:
                             sample.append(item.find_element(By.CSS_SELECTOR, ".title a").text.split(" ")[0])
                         except:
                             pass
-                    if sample and not any(self.community in n for n in sample):
-                        print(f"⚠ 前5条均不匹配「{self.community}」，贝壳网返回了随机推荐")
-                        print(f"  示例: {', '.join(sample[:3])}")
-                        print("  请确认小区名称是否正确，或尝试缩短关键词")
+                    no_match = sample and not any(_is_match(self.community, n) for n in sample)
+
+                    if has_notify and no_match:
+                        room_tip = f"{self.room}室" if self.room else ""
+                        print(f"⚠ 未找到「{self.community}」{room_tip}房源，请检查小区名称是否正确")
+                        print(f"  推荐结果示例: {', '.join(sample[:3])}")
                         break
 
                 for item in items:
@@ -199,35 +235,44 @@ class BeikeScraper:
                 print(f"⚠ 第 {page} 页失败: {e}")
                 break
 
-        # 过滤不匹配的推荐结果
+        # 过滤不匹配的推荐结果（仅保留含搜索词的数据）
         if self.data and self.community:
-            matched = [d for d in self.data if self.community in d["小区名称"]]
-            if not matched:
-                print(f"\n✗ 无匹配数据，请确认小区名称「{self.community}」")
-                self.data = []
-            else:
+            matched = [d for d in self.data if _is_match(self.community, d["小区名称"])]
+            if matched:
                 diff = len(self.data) - len(matched)
                 if diff:
                     print(f"  过滤 {diff} 条不相关房源")
                 self.data = matched
-                print(f"\n✓ 共爬取 {len(self.data)} 条")
-        elif self.data:
+        if self.data:
             print(f"\n✓ 共爬取 {len(self.data)} 条")
         else:
-            print(f"\n✗ 无数据")
+            room_tip = f"{self.room}室" if self.room else ""
+            print(f"\n✗ 无数据：请检查小区名称「{self.community}」或 成都 暂无{room_tip}房源")
 
     def save_data(self):
-        """保存Excel，末行均价，简图列嵌入图片（并发下载）"""
+        """
+        保存Excel，末行均价。
+        图片策略：下载到 data/{小区名}/imgs/ 目录，Excel用相对路径引用。
+        每次执行前清空该目录下的旧数据（表格+图片）。
+        """
         if not self.data:
             print("⚠ 无数据可保存")
             return
 
-        from openpyxl.drawing.image import Image as XLImage
+        import shutil
         from openpyxl.utils import get_column_letter
-        from concurrent.futures import ThreadPoolExecutor, as_completed
 
-        tag = f"{CITY_NAME}_{self.community or '全部'}_{self.room or '不限'}室"
-        df  = pd.DataFrame(self.data)
+        tag      = f"{CITY_NAME}_{self.community or '全部'}_{self.room or '不限'}室"
+        out_dir  = os.path.join(config.OUTPUT_DIR, tag)   # data/成都_鑫苑鑫都汇_3室/
+        img_dir  = os.path.join(out_dir, "imgs")          # data/成都_鑫苑鑫都汇_3室/imgs/
+
+        # 每次执行先清空目录，保证数据最新
+        if os.path.exists(out_dir):
+            shutil.rmtree(out_dir)
+            print(f"✓ 已清空旧数据: {out_dir}")
+        os.makedirs(img_dir, exist_ok=True)
+
+        df = pd.DataFrame(self.data)
 
         # 计算均价并追加汇总行
         df["_价值"] = df["单价"].str.extract(r"([\d,]+)").replace(",", "", regex=True).astype(float)
@@ -238,20 +283,33 @@ class BeikeScraper:
         df = pd.concat([df, pd.DataFrame([summary])], ignore_index=True)
         df = df.drop(columns=["_价值", "简图URL"])
 
-        filepath = f"{config.OUTPUT_DIR}/beike_{tag}.xlsx"
-
-        # 并发下载所有图片
+        # 并发下载图片到本地
+        from concurrent.futures import ThreadPoolExecutor, as_completed
         img_urls = [d.get("简图URL", "") for d in self.data] + [""]
         valid_urls = {i: u for i, u in enumerate(img_urls) if u}
         print(f"正在并发下载 {len(valid_urls)} 张图片...")
 
-        img_cache = {}
-        with ThreadPoolExecutor(max_workers=8) as executor:
-            futures = {executor.submit(download_image, url): idx for idx, url in valid_urls.items()}
-            for future in as_completed(futures):
-                idx = futures[future]
-                img_cache[idx] = future.result()
+        img_files = {}  # idx -> 本地文件名
+        def _download(idx, url):
+            data = download_image(url)
+            if data:
+                fname = f"{idx+1}.jpg"
+                fpath = os.path.join(img_dir, fname)
+                with open(fpath, "wb") as f:
+                    f.write(data)
+                return idx, fname
+            return idx, None
 
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            futures = {executor.submit(_download, idx, url): idx for idx, url in valid_urls.items()}
+            for future in as_completed(futures):
+                idx, fname = future.result()
+                if fname:
+                    img_files[idx] = fname
+
+        # 写入Excel，简图列用相对路径文本（可在Excel中手动查看）
+        # 同时在简图列旁边插入实际图片
+        filepath = os.path.join(out_dir, f"beike_{tag}.xlsx")
         with pd.ExcelWriter(filepath, engine="openpyxl") as writer:
             df.to_excel(writer, index=False)
             ws = writer.sheets["Sheet1"]
@@ -263,24 +321,26 @@ class BeikeScraper:
                     ws.cell(row=r, column=link_col).hyperlink = val
                     ws.cell(row=r, column=link_col).style = "Hyperlink"
 
-            # 简图列嵌入图片
+            # 简图列：插入本地图片
+            from openpyxl.drawing.image import Image as XLImage
             img_col = len(df.columns) + 1
             ws.cell(row=1, column=img_col).value = "简图"
             ws.column_dimensions[get_column_letter(img_col)].width = 22
 
-            for idx, data in img_cache.items():
-                r = idx + 2  # 数据从第2行开始
+            for idx, fname in img_files.items():
+                r = idx + 2
                 ws.row_dimensions[r].height = 80
-                if not data:
-                    continue
+                fpath = os.path.join(img_dir, fname)
                 try:
-                    img_obj = XLImage(BytesIO(data))
+                    img_obj = XLImage(fpath)
                     img_obj.width, img_obj.height = 120, 90
                     ws.add_image(img_obj, f"{get_column_letter(img_col)}{r}")
                 except Exception:
                     pass
 
-        print(f"✓ 已保存: {filepath}  (均价: {avg:,.0f}元/平)")
+        print(f"✓ 已保存: {filepath}")
+        print(f"  图片目录: {img_dir}  (共 {len(img_files)} 张)")
+        print(f"  均价: {avg:,.0f}元/平")
 
     def close(self):
         if self.driver:
