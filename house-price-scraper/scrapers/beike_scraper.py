@@ -163,7 +163,10 @@ class BeikeScraper:
 
                 for item in items:
                     try:
-                        community = item.find_element(By.CSS_SELECTOR, ".positionInfo a").text.strip()
+                        # 小区名在 .title a 中，格式如 "西财学府尚郡 3室2厅 西南"
+                        title_text = item.find_element(By.CSS_SELECTOR, ".title a").text.strip()
+                        # 提取小区名（去掉室型、朝向等后缀）
+                        community = title_text.split(" ")[0].strip()
                         total_price = item.find_element(By.CSS_SELECTOR, ".totalPrice span").text.strip()
                         unit_price = item.find_element(By.CSS_SELECTOR, ".unitPrice span").text.strip()
                         self.data.append({
