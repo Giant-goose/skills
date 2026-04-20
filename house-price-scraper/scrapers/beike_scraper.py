@@ -99,11 +99,12 @@ class BeikeScraper:
         self.driver.get(self.url)
         time.sleep(3)
 
-        # 验证页面是否正常（城市代码错误会跳转到首页或报错）
         current = self.driver.current_url
-        if "ke.com" not in current or "Forbidden" in self.driver.title:
-            raise RuntimeError(f"页面加载异常，可能城市代码有误。当前URL: {current}")
-        print(f"✓ 页面加载完成: {self.driver.title}")
+        title = self.driver.title
+        # 被重定向到首页或返回Forbidden说明城市代码有误
+        if "Forbidden" in title or current == f"https://{self.city_code}.ke.com/":
+            raise RuntimeError(f"页面加载异常，城市代码可能有误: {self.city_code}")
+        print(f"✓ 页面加载完成")
 
     def select_room_type(self):
         """
@@ -141,31 +142,54 @@ class BeikeScraper:
             print(f"⚠ 总价排序失败: {e}")
 
     def scrape_data(self, max_pages=1):
-        """爬取房源列表数据，直接构造翻页URL避免触发人机验证"""
+        """爬取房源列表数据，含空结果和人机验证检测"""
         print(f"开始爬取，最多 {max_pages} 页...")
 
         for page in range(1, max_pages + 1):
             print(f"\n--- 第 {page} 页 ---")
 
-            # 第1页已在open_page打开，后续页直接构造URL跳转
             if page > 1:
                 page_url = build_url(self.city_code, self.community, self.room, page)
-                print(f"跳转: {page_url}")
                 self.driver.get(page_url)
-                # 随机延迟，模拟人工浏览间隔
                 time.sleep(random.uniform(3, 6))
 
             try:
+                # 检测人机验证
+                if "验证" in self.driver.title or "verify" in self.driver.current_url.lower():
+                    print("⚠ 检测到人机验证，停止爬取")
+                    break
+
+                # 检测空结果
+                empty = self.driver.find_elements(By.CSS_SELECTOR, ".nullTip, .empty-content, .no-content")
+                if empty:
+                    room_tip = f"{self.room}室" if self.room else ""
+                    print(f"⚠ 未找到房源：请确认小区名称「{self.community}」，或 {self.city_name} 暂无{room_tip}房源")
+                    break
+
                 wait = WebDriverWait(self.driver, 10)
                 items = wait.until(EC.presence_of_all_elements_located(
                     (By.CSS_SELECTOR, ".sellListContent li.clear")
                 ))
 
+                # 提前验证：前5条是否匹配小区名
+                if self.community and page == 1 and len(items) >= 5:
+                    sample_names = []
+                    for item in items[:5]:
+                        try:
+                            title_text = item.find_element(By.CSS_SELECTOR, ".title a").text.strip()
+                            sample_names.append(title_text.split(" ")[0].strip())
+                        except:
+                            pass
+                    matched = [n for n in sample_names if self.community in n]
+                    if not matched:
+                        print(f"⚠ 前5条均不匹配「{self.community}」，贝壳网返回了随机推荐结果")
+                        print(f"  请确认小区名称是否正确，或尝试缩短关键词")
+                        print(f"  示例结果: {', '.join(sample_names[:3])}")
+                        break
+
                 for item in items:
                     try:
-                        # 小区名在 .title a 中，格式如 "西财学府尚郡 3室2厅 西南"
                         title_text = item.find_element(By.CSS_SELECTOR, ".title a").text.strip()
-                        # 提取小区名（去掉室型、朝向等后缀）
                         community = title_text.split(" ")[0].strip()
                         total_price = item.find_element(By.CSS_SELECTOR, ".totalPrice span").text.strip()
                         unit_price = item.find_element(By.CSS_SELECTOR, ".unitPrice span").text.strip()
@@ -184,10 +208,28 @@ class BeikeScraper:
                 print(f"✓ 本页 {len(items)} 条")
 
             except Exception as e:
-                print(f"⚠ 第 {page} 页失败: {e}")
+                print(f"⚠ 第 {page} 页获取失败: {e}")
                 break
 
-        print(f"\n✓ 共爬取 {len(self.data)} 条")
+        # 统一判断结果：检查是否是贝壳网随机推荐（小区名均不含搜索词）
+        if not self.data:
+            room_tip = f"{self.room}室" if self.room else ""
+            print(f"\n✗ 无数据：请确认小区名称「{self.community}」是否正确，或 {self.city_name} 暂无{room_tip}房源")
+        elif self.community:
+            # 检查爬取结果中是否有匹配的小区名
+            matched = [d for d in self.data if self.community in d["小区名称"]]
+            if not matched:
+                print(f"\n✗ 结果不匹配：未找到包含「{self.community}」的房源")
+                self.data = []  # 清空，不保存无效数据
+            else:
+                # 只保留匹配的数据
+                unmatched = len(self.data) - len(matched)
+                if unmatched > 0:
+                    print(f"  过滤掉 {unmatched} 条不相关房源")
+                    self.data = matched
+                print(f"\n✓ 共爬取 {len(self.data)} 条（匹配「{self.community}」）")
+        else:
+            print(f"\n✓ 共爬取 {len(self.data)} 条")
 
     def save_data(self):
         """保存数据到文件，末行追加单价均值"""
