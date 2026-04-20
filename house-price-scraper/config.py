@@ -8,7 +8,7 @@ BEIKE_URL = "https://cd.ke.com/ershoufang/l3/"
 FANG_URL = "https://cd.esf.fang.com/house/"
 
 # 浏览器配置
-HEADLESS = False  # 是否无头模式运行（True=不显示浏览器窗口）
+HEADLESS = True  # 后台无感知运行
 WINDOW_SIZE = "1920,1080"  # 浏览器窗口大小
 
 # 爬取配置
