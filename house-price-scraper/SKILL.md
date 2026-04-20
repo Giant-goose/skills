@@ -1,6 +1,6 @@
 ---
 name: house-price-scraper
-version: 2.0.0
+version: 2.1.0
 description: 贝壳网成都二手房小区均价爬虫，支持小区名/室型筛选，自动按总价排序，Excel嵌入房源图片和链接
 trigger: "二手房行情,二手房,房情"
 entry: main.py
@@ -87,7 +87,7 @@ pip install -r requirements.txt
 1. **解析参数** → 小区名 + 室型（支持中文）
 2. **创建 venv**（首次）→ `python -m venv venv && pip install -r requirements.txt`
 3. **启动浏览器** → Selenium + ChromeDriver
-4. **访问贝壳网** → `https://cd.ke.com/ershoufang/`
+4. **访问贝壳网** → `https://cd.ke.com/ershoufang/` + `quote(小区名)` URL 编码
 5. **滚动触发懒加载** → 分段滚动让图片全部加载
 6. **前5条验证** → 确认返回结果匹配小区名，否则中断
 7. **人机验证检测** → 发现验证页面则停止
@@ -123,6 +123,8 @@ USER_AGENT = "Mozilla/5.0 ..."
 3. 网站结构变化可能导致 CSS 选择器失效
 4. 人机验证会中断爬取，稍后重试
 5. 小区名称需与贝壳网一致（可尝试缩短关键词）
+6. **v2.1.0: build_url 已修复 community 参数 URL 编码**，中文小区名无需手动 URL encode
+7. 小区名称不匹配时贝壳返回随机推荐（如"滨江栖棠"而非"滨江和城"），此时换用更精确名称或缩短关键词重试
 
 ## 项目文件
 

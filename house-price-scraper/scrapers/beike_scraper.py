@@ -11,6 +11,7 @@
 
 import sys, os, re, time, random, urllib.request
 from io import BytesIO
+from urllib.parse import quote
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from selenium.webdriver.common.by import By
@@ -42,7 +43,7 @@ def normalize_room(raw: str) -> str:
 def build_url(community: str, room: str, page: int = 1) -> str:
     """拼接贝壳网搜索URL，page>1时加pg段"""
     room_seg = ROOM_MAP.get(room, "")
-    rs_seg   = f"rs{community}" if community else ""
+    rs_seg   = f"rs{quote(community)}" if community else ""
     path_seg = f"{room_seg}{rs_seg}" if (room_seg or rs_seg) else ""
     pg_seg   = f"pg{page}/" if page > 1 else ""
     path     = f"/ershoufang/{path_seg}/{pg_seg}" if path_seg else f"/ershoufang/{pg_seg}"
