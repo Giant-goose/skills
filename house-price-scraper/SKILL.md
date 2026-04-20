@@ -1,11 +1,12 @@
 ---
 name: house-price-scraper
-version: 1.0.0
+version: 1.0.1
 description: 贝壳网二手房小区均价爬虫，支持城市/小区名/室型筛选，数据保存为 Excel 并自动计算均价
 trigger: "二手房行情,二手房,房情"
 entry: main.py
 language: python
 platform: local
+setup_needed: true
 ---
 
 # 房产数据爬虫 - house-price-scraper
@@ -135,3 +136,56 @@ df = df.fillna("")  # 清理 nan
 ```
 C:\Users\15284\Desktop\git\house_trend_info\
 ```
+
+## 首次使用环境配置
+
+在新环境使用时，需要创建虚拟环境并安装依赖：
+
+```bash
+# 1. 进入项目目录
+cd C:\Users\15284\Desktop\git\house_trend_info\
+
+# 2. 创建虚拟环境（Python 3.8+）
+python -m venv venv
+
+# 3. 激活虚拟环境（Windows CMD）
+venv\Scripts\activate.bat
+
+# 或激活虚拟环境（PowerShell）
+venv\Scripts\Activate.ps1
+
+# 或在 Git Bash / WSL 中
+./venv/Scripts/python.exe -X utf8 main.py <参数>
+
+# 4. 安装依赖
+pip install -r requirements.txt
+
+# 5. 运行（Windows 中文环境需加 -X utf8 参数）
+python -X utf8 main.py <小区名> [室型] [cs=城市]
+```
+
+### WSL/跨环境执行
+
+```bash
+# 强制 UTF-8 编码（解决 Windows GBK 中文乱码）
+PYTHONUTF8=1 ./venv/Scripts/python.exe -X utf8 main.py <小区名> [室型] [cs=城市]
+```
+
+### 常见问题
+
+| 问题 | 解决方案 |
+|------|---------|
+| `UnicodeEncodeError: 'gbk'` | 加 `-X utf8` 参数，或设置 `PYTHONUTF8=1` |
+| `ModuleNotFoundError: selenium` | 虚拟环境未激活，先 `venv\Scripts\activate` 再 `pip install -r requirements.txt` |
+| ChromeDriver 版本不匹配 | 首次运行会自动下载，或手动安装对应版本 |
+| 虚拟环境创建失败 | 确保 Python 3.8+，用 `python --version` 检查 |
+
+## 输出格式
+
+返回 Markdown 表格，字段精简为：
+
+| 小区名称 | 室型 | 总价 | 单价 |
+| --- | --- | --- | --- |
+| 中海右岸 | 3室 | 125万 | 17,292元/平 |
+| ... | ... | ... | ... |
+|  |  | **均价** | **16,831元/平** |
